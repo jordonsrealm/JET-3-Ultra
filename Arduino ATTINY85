@@ -1,0 +1,73 @@
+#include <SoftwareSerial.h>
+
+//Define the pins used on the attiny using datasheet
+#define clk 2
+#define mosi 3
+#define cs 4
+#define vol_div 1
+#define rx 0
+#define tx 5
+
+//Use this function call to instantiate serial communication with
+//HC-06
+SoftwareSerial mySerial(rx,tx);
+
+//Buffer used to hold the values retrieved from HC-06
+char buff[2];
+
+//Function used to shift data out in SPI protocol
+void shift_Out( byte value)
+{
+  int bit;
+  for(bit = 0x80; bit; bit >>= 1) {
+      if(value & bit) {
+        //digitalWrite(_mosi, HIGH); 
+        PORTB |= (1 << mosi);
+        //SET_BIT(mosiport, mosipinmask);
+      } else {
+        //digitalWrite(_mosi, LOW); 
+        PORTB &= ~(1 << mosi);
+        //CLEAR_BIT(mosiport, mosipinmask);
+      }
+      //digitalWrite(_sclk, HIGH);
+        PORTB |= (1 << clk);
+      //SET_BIT(clkport, clkpinmask);
+      //digitalWrite(_sclk, LOW);
+        PORTB &= ~(1 << clk);
+      //CLEAR_BIT(clkport, clkpinmask);
+    }
+}
+
+void setup() {
+  //Put pins as OUTPUT or INPUT 
+ /* pinMode(clk, OUTPUT); //clk
+  pinMode(mosi, OUTPUT); //mosi
+  pinMode(cs, OUTPUT); //cs
+  pinMode(tx, OUTPUT); //tx
+  pinMode(rx, INPUT); //rx
+  */
+  DDRB = B00111110;
+  //Write to the pins for half the input voltage ie. 5v
+  //First to the low pass filter
+  analogWrite(vol_div, 128);
+  //Then to the spi digital potentiometer
+  shift_Out(16);
+  shift_Out(64);
+  //Setup the Serial communication used with HC-06
+  mySerial.begin(9600);
+}
+
+void loop() {
+  if(mySerial.available() >= 2){
+    //Disable any interrupts services
+      cli();
+      mySerial.readBytes( buff, 2);
+      analogWrite(vol_div, buff[0]);
+      PORTB &= ~(1 << cs);
+      shift_Out(16);
+      shift_Out(buff[1]);
+      PORTB |= (1 << cs);
+      //Enables the interrupt services again
+      sei();
+  }
+}
