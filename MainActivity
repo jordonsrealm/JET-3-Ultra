@@ -1,0 +1,254 @@
+package com.example.jordon.jet_3_ultra;
+
+import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.view.Display;
+import android.widget.Toast;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.util.UUID;
+
+
+public class MainActivity extends Activity {
+
+
+    //
+    static Handler h;
+    //Custom SurfaceView "ControllerView" is declared
+    private ControllerView controllerView;
+    //integer values representing width and height are declared
+    private int width, height;
+    // Status when used by the Handler to communicate that the message was received
+    final int RECIEVE_MESSAGE = 1;
+    //BluetoothAdapter is declared
+    private BluetoothAdapter btAdapter = null;
+    //BluetoothSocket is declared
+    private BluetoothSocket btSocket = null;
+    //Thread needed for connecting to bluetooth device is declared
+    public ConnectedThread mConnectedThread;
+    // SPP UUID service is needed for bluetooth device and may be different for other bluetooth devices
+    private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    // MAC-address of Bluetooth module (you must edit this line)
+    private static String address = "20:14:08:05:27:21";
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        //Set the view using the layout resource
+        setContentView(R.layout.activity_main);
+        //Get the display object needed to find the device's dimensions
+        Display display = getWindowManager().getDefaultDisplay();
+        //Set the dimensions of the screen to the necessary variables
+        width = display.getWidth();  // deprecated
+        height = display.getHeight();  // deprecated
+        //controllerView = new ControllerView( getApplicationContext(), this);
+        //Set the ControllerView using the correct id #
+        controllerView = (ControllerView) findViewById(R.id.view);
+        //Now use the setters to set the width and height variables
+        controllerView.set_Screen_Width(width);
+        controllerView.set_Screen_Height(height);
+
+        //Handler uses
+        h = new Handler() {
+            public void handleMessage(android.os.Message msg) {
+                switch (msg.what) {
+                    case RECIEVE_MESSAGE:                                                  // if receive massage
+                        byte[] readBuf =  (byte[]) msg.obj;
+                        Toast.makeText(getBaseContext(), "Byte is: " + readBuf[0], Toast.LENGTH_SHORT).show();
+                        break;
+                }
+            };
+        };
+        //Set the bluetoothadapter to Default
+        btAdapter = BluetoothAdapter.getDefaultAdapter();       // get Bluetooth adapter
+        //Go to method to
+        checkBTState();
+    }
+
+    //Method used to return the BluetoothSocket
+    private BluetoothSocket createBluetoothSocket(BluetoothDevice mydevice) throws IOException {
+        //If statement used to test for SDK is higher or equal to 10
+        if(Build.VERSION.SDK_INT >= 10){
+            try {
+                //Get the
+                final Method  m = mydevice.getClass().getMethod("createInsecureRfcommSocketToServiceRecord", new Class[] { UUID.class });
+                return (BluetoothSocket) m.invoke(mydevice, MY_UUID);
+            } catch (Exception e) {
+                Toast.makeText(getApplicationContext(), "Couldn't connect to socket", Toast.LENGTH_SHORT).show();
+            }
+        }
+        return  mydevice.createRfcommSocketToServiceRecord(MY_UUID);
+    }
+
+    //-------------Method used to
+    @Override
+    public void onResume() {
+        super.onResume();
+
+        // Set up a pointer to the remote node using it's address.
+        BluetoothDevice device = btAdapter.getRemoteDevice(address);
+        // Two things are needed to make a connection:
+        //   A MAC address, which we got above.
+        //   A Service ID or UUID.  In this case we are using the
+        //     UUID for SPP.
+
+        try {
+            btSocket = createBluetoothSocket(device);
+        } catch (IOException e) { errorExit("Fatal Error", "In onResume() and socket create failed: " + e.getMessage() + "."); }
+
+        // Discovery is resource intensive.  Make sure it isn't going on
+        // when you attempt to connect and pass your message.
+        btAdapter.cancelDiscovery();
+
+        // Establish the connection.  This will block until it connects.
+        try {
+            btSocket.connect();
+        } catch (IOException e) {
+            try {
+                btSocket.close();
+            } catch (IOException e2) {
+                errorExit("Fatal Error", "In onResume() and unable to close socket during connection failure" + e2.getMessage() + ".");
+            }
+        }
+
+        // Create a data stream so we can talk to server.
+        //Create the Thread needed for communication
+        mConnectedThread = new ConnectedThread(btSocket);
+        //Start the thread
+        mConnectedThread.start();
+        //Lastly set the ControllerView's thread to the one above
+        controllerView.set_Thread(mConnectedThread);
+    }
+
+    /*-------------Methods used for the connectedThread to stop, destroy or pause the Thread and to send Neutral
+    Values to stop the device-------------*/
+    @Override
+    protected void onStop() {
+        super.onStop();
+        //Used to send "Neutral" position to wheelchair
+        sendNullValues();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        //Used to send "Neutral" position to wheelchair
+        sendNullValues();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        //Used to send "Neutral" position to wheelchair
+        sendNullValues();
+
+        try {
+            //Close the bluetooth socket
+            btSocket.close();
+        } catch (IOException e2) {
+            errorExit("Fatal Error", "In onPause() and failed to close socket." + e2.getMessage() + ".");
+        }
+    }
+    //-------------End of Methods-------------
+
+    //-------------Method used to send Neutral values to the wheelchair to stop it's movement
+    public void sendNullValues(){
+        byte[] buffer = {(byte) 128,(byte) 64};
+        try {
+            //Send to the OutputStream a "Neutral" position
+            controllerView.connectedThread.mmOutStream.write(buffer);
+        }
+        catch(IOException ie){};
+    }
+
+    //-------------Method used to find if there exists any bluetooth compatibility
+    private void checkBTState() {
+        // Check for Bluetooth support and then check to make sure it is turned on
+        // Emulator doesn't support Bluetooth and will return null
+        if(btAdapter==null) {
+            errorExit("Fatal Error", "Bluetooth not support");
+        } else {
+            if (btAdapter.isEnabled()) {
+            } else {
+                //Prompt user to turn on Bluetooth
+                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(enableBtIntent, 1);
+            }
+        }
+    }
+
+    //Method used to send a Toast to the User
+    private void errorExit(String title, String message){
+        Toast.makeText(getBaseContext(), title + " - " + message, Toast.LENGTH_LONG).show();
+        finish();
+    }
+
+    //Public class of the Thread needed for the OutputStream
+    public class ConnectedThread extends Thread {
+        //Declare InputStreams and OutputStreams
+        public final InputStream mmInStream;
+        public final OutputStream mmOutStream;
+
+        public ConnectedThread(BluetoothSocket socket) {
+            //Set the Data Streams to null
+            InputStream DIn = null;
+            OutputStream DOut = null;
+
+            // Get the input and output streams, using temporary objects because
+            // member streams are final
+            try {
+                //Get from the socket an InputStream and an OutputStream
+                DIn = socket.getInputStream();
+                DOut = socket.getOutputStream();
+            } catch (IOException e) { }
+
+            //Store the respective streams into the correct variables
+            mmInStream = DIn;
+            mmOutStream = DOut;
+        }
+
+        //Run method used by the thread Class which reads the inputStream if one is sent from bluetooth device (Not in our case)
+        public void run() {
+            // buffer store for the stream
+            byte[] buffer = new byte[256];
+            // bytes returned from read()
+            int bytes;
+
+            // Listen to the InputStream until an exception occurs
+            while (true) {
+                try {
+                    // Read from the InputStream
+                    bytes = mmInStream.read(buffer);        // Get number of bytes and message in "buffer"
+                    //Have the Handler obtain the message and process it the message queue
+                    h.obtainMessage(RECIEVE_MESSAGE, bytes, -1, buffer).sendToTarget();     // Send to message queue Handler
+                } catch (IOException e) {
+                    break;
+                }
+            }
+        }
+
+        /* Call this from the main activity to send data to the remote device */
+        public void write(byte[] message) {
+            byte[] msgBuffer = message;
+            try {
+                //Write the byte array or message to the OutputStream
+                mmOutStream.write(msgBuffer);
+                //             Toast.makeText(getBaseContext(), msgBuffer+"", Toast.LENGTH_SHORT).show();
+            } catch (IOException e) {
+                //Toast message saying that the command wasn't send through
+                Toast.makeText(getApplicationContext(), "Didn't go through", Toast.LENGTH_SHORT).show();
+            }
+        }
+
+    }
+}
