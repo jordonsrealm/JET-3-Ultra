@@ -1,0 +1,214 @@
+package com.example.jordon.jet_3_ultra;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.util.AttributeSet;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+import android.view.View;
+import java.io.IOException;
+
+
+/*Created by Jordon on 10/10/2015.*/
+
+/*-----------------Public class of ControllerView which extends SurfaceView and has two interfaces, one for Touch Events and
+                   for the SurfaceView-----------------*/
+public class ControllerView extends SurfaceView implements View.OnTouchListener, SurfaceHolder.Callback{
+
+    //Bitmap used for the bullseye on screen
+    private Bitmap bmp;
+    //MainActivity to be used as a context
+    public MainActivity main_act;
+    //SurfaceHolder needed to write to Surfaceview
+    private SurfaceHolder holder;
+    //integer values representing the screen width and height
+    private int width, height;
+    //Setting the Thread to null
+    public MainActivity.ConnectedThread connectedThread = null;
+    //integer values representing the bitmap width and height
+    private int bmp_width, bmp_height;
+    //byte [] used to store the values of each axis (x, y)
+    private byte[] bytes = new byte[2]; //initialization of byte[] used for writing to the mCU
+    /*The hypontenuse which will give us the distance of the radius of the bullseye circle
+            needed to test if it is inside the bullseye */
+    private double hypontenuse = bmp_height / 2;
+
+//-----------------Constructors-----------------
+    public ControllerView(Context context){
+        super(context);
+        //Add a callback when using SurfaceHolder
+        getHolder().addCallback(this);
+        //Set a listener for the Surfaceview to receive calls
+        setOnTouchListener(this);
+        //Load a bitmap from the resources file
+        bmp = BitmapFactory.decodeResource(getResources(), R.drawable.controller_pic);
+        //Set the dimensions of the bitmap
+        bmp_width = bmp.getWidth();
+        bmp_height = bmp.getHeight();
+    }
+
+    public ControllerView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        //Add a callback when using SurfaceHolder
+        getHolder().addCallback(this);
+        //Set a listener for the Surfaceview to receive calls
+        setOnTouchListener(this);
+        //Load a bitmap from the resources file
+        bmp = BitmapFactory.decodeResource(getResources(), R.drawable.controller_pic);
+        //Set the dimensions of the bitmap
+        bmp_width = bmp.getWidth();
+        bmp_height = bmp.getHeight();
+    }
+
+    public ControllerView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        //Add a callback when using SurfaceHolder
+        getHolder().addCallback(this);
+        //Set a listener for the Surfaceview to receive calls
+        setOnTouchListener(this);
+        //Load a bitmap from the resources file
+        bmp = BitmapFactory.decodeResource(getResources(), R.drawable.controller_pic);
+        //Set the dimensions of the bitmap
+        bmp_width = bmp.getWidth();
+        bmp_height = bmp.getHeight();
+    }
+
+    //-----------------End of Constructors-----------------
+
+
+    //-----------------SurfaceView Methods-----------------
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+    }
+
+    //When the surface is created first draw onto it the
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        Canvas c = holder.lockCanvas(null);
+        onDraw(c);
+        holder.unlockCanvasAndPost(c);
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+    }
+    //-----------------End of SurfaceView Methods-----------------
+
+
+    //---------------Setters-----------------
+    //Sets MainActivity as the context
+    public void set_MainActivity(MainActivity mainActivity){
+        main_act = mainActivity;
+    }
+
+    public void set_Thread(MainActivity.ConnectedThread thread){
+        connectedThread = thread;
+    }
+
+    public void set_Screen_Width(int width) {
+        this.width = width;
+    }
+
+    public void set_Screen_Height(int h) {
+        this.height =  h;
+    }
+
+    public void setScreen_length(Double length){
+
+    }
+    //---------------End of Setters-----------------
+
+    //Method used to draw the background Black and then the bullseye image
+    @Override
+    protected void onDraw(Canvas canvas) {
+        canvas.drawColor(Color.BLACK);
+        //We draw the bitmap at the middle of the screen
+        canvas.drawBitmap(bmp, (width - bmp.getWidth()) / 2, ( height - bmp.getHeight()) / 2, null);
+    }
+
+    @Override
+    public boolean onTouch(View v, MotionEvent me){
+        // Filter results by gettting only the finger movements that the up and down motion gestures
+        // Get holder from the SurfaceView to get the canvas for painting to it
+        holder = getHolder();
+        // Lock Canvas to paint to it 186 352
+        Canvas canvas = holder.lockCanvas();
+
+        if( me.getAction() == MotionEvent.ACTION_MOVE ) {
+            // Retrieve the points where the user presses on the screen
+            float x_pos = me.getX();
+            float y_pos = me.getY();
+
+            // Draw the default picture (bullseye)on the background
+            canvas.drawBitmap(bmp, (width - bmp.getWidth()) / 2, (height - bmp.getHeight()) / 2, null);
+            // Draw a black circle where the user presses on the screen
+            canvas.drawCircle(x_pos, y_pos, 50, new Paint(Color.BLACK));
+            // Unlock Canvas to tell the SurfaceView to update
+         //   holder.unlockCanvasAndPost(canvas);
+               if( hypontenuse >= Math.sqrt(Math.pow((double) (y_pos - (height / 2)), 2) + (Math.pow((double) (x_pos - (width / 2)), 2))) ){
+                // if(x_pos <= (width / 2 + bmp_width / 2) && x_pos >= (width / 2 - bmp_width / 2) && y_pos <= (height / 2+ bmp_height / 2) && y_pos >= (height / 2 - bmp_height / 2)){
+                   //Make sure the connectedThread exists
+                   if (connectedThread != null) {
+                        try {
+                            /*This is where we take the converted values and write to the OutputStream that communicates with the bluetooth
+                            module on the embedded system*/
+                            connectedThread.mmOutStream.write(convertValues(x_pos, y_pos));
+                        } catch (IOException ex) {
+                        }
+                    }
+               }
+            //Then we unlock the Canvas in order to view the updated finger position
+            holder.unlockCanvasAndPost(canvas);
+        }
+        if( me.getAction() == MotionEvent.ACTION_UP ){
+            byte[] buffer = {(byte) 128,(byte) 64};
+            try {
+
+                /*We write to the OutputStream neutral values in to act as though it were a real joystick and returns back to a "neutral"
+                  position*/
+                connectedThread.mmOutStream.write(buffer);
+            }catch(IOException ex){}
+        }
+        return true;
+    }
+
+    private byte[] convertValues(float x, float y){
+        int h_margin = (width - bmp_width) / 2; //Marginal Width
+        int v_margin = (height - bmp_height) / 2; //Marginal Height
+        //int x_center = (width) / 2; // center of x axis
+        //int y_center = (height) / 2; // center of y axis
+        double x_converted = (double)((x - h_margin) / bmp_width); //Value used to find percentage of total steps
+        double y_converted = (double)((y - v_margin) / bmp_height); //Value used to find percentage of total steps
+        //Limits on left, right, forward, reverse
+        // 1.15, 1.1, 3.9, 3.65
+        //f/r: 3.85 - 1.15 l/r: 3.65 - 1.35
+        // .04 Ohms per step of Dig. Potentiometer
+        //Double variables
+        double x_num, y_num;
+        //If the value of x is to the right of vertical line on circle
+        x_num = (3.65 - 2.5) / 0.04;//29 rounded from 28.75
+        //35 + (%_of_Width)
+        //y_num = (2.5 - 1.15) / 0.04; //34 rounded from 33.75
+        //If the value of y is below the horizontal line of circle
+        //30 + (%_of_Height)
+        x_num = 69 + 117 * (x_converted);
+
+        //y_num = 30 + (2 * y_num * y_converted);
+        //due to damaged IC I am using a low pass filter to give me analog voltage
+        //117 is from 1.15 volt to 3.65 range from
+        y_num = 30 + (69 * y_converted);
+
+        bytes[0] = (byte) x_num ;
+        bytes[1] = (byte) y_num ;
+        return bytes;
+    }
+
+
+
+
+}
